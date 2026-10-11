@@ -22,7 +22,7 @@ Start Vite in a second terminal:
 npm run dev
 ```
 
-The app defaults to `http://localhost:8787/api`. To use a different proxy URL, set the public `VITE_API_BASE_URL` before starting Vite. The proxy allows the standard local Vite origins by default; set `ALLOWED_ORIGINS` for a deployed frontend.
+The browser uses `/api` by default. During local development, Vite forwards `/api/*` requests to the local Node proxy on `http://127.0.0.1:8787`; on Vercel, the files in `api/` provide serverless endpoints on the same domain. To use a separately hosted API, set the public `VITE_API_BASE_URL` before building. The local proxy allows the standard Vite development origins by default.
 
 For the optional Qwen and earnings features, export their server-only environment variables before `node server.js`:
 
@@ -33,6 +33,12 @@ export EARNINGS_CALENDAR_URL="https://your-provider.example/calendar?ticker={tic
 export EARNINGS_API_KEY="..."
 node server.js
 ```
+
+## Deploy to Vercel
+
+Import the GitHub repository into Vercel and keep the project Root Directory at the repository root. The included `vercel.json` sets the build command to `npm run build` and the output directory to `dist`. The `api/` directory contains Vercel serverless functions, so `server.js` is only needed for local development.
+
+Optional Qwen and earnings features need the server-only environment variables listed below in Vercel Project Settings → Environment Variables. Do not set `VITE_API_BASE_URL` to `http://localhost:8787/api` on Vercel; leave it unset or set it to `/api`. After changing environment variables, redeploy.
 
 ## Server Environment
 
