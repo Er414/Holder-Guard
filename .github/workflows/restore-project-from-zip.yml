@@ -1,0 +1,93 @@
+name: Restore project from uploaded ZIP
+
+on:
+  push:
+    paths:
+      - "*.zip"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore files from project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find . -maxdepth 1 -type f -iname '*.zip' -print -quit)"
+          if [[ -z "$archive" ]]; then
+            echo "No project ZIP found in the repository root."
+            exit 1
+          fi
+
+          extract_dir="$RUNNER_TEMP/holder-guard-restore"
+          mkdir -p "$extract_dir"
+
+          python3 - "$archive" "$extract_dir" <<'PY'
+          import sys
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile
+
+          archive = Path(sys.argv[1])
+          destination = Path(sys.argv[2]).resolve()
+
+          with ZipFile(archive) as zf:
+              members = zf.infolist()
+              for member in members:
+                  name = PurePosixPath(member.filename)
+                  if name.is_absolute() or ".." in name.parts:
+                      raise SystemExit(f"Unsafe archive path: {member.filename}")
+              zf.extractall(destination)
+
+          candidates = list(destination.rglob("src/main.tsx"))
+          project_root = next(
+              (p.parent.parent for p in candidates
+               if (p.parent / "App.tsx").is_file()
+               and (p.parent / "index.css").is_file()
+               and (p.parent.parent / "package.json").is_file()),
+              None,
+          )
+          if project_root is None:
+              raise SystemExit(
+                  "ZIP must contain package.json and src/main.tsx, src/App.tsx, src/index.css."
+              )
+
+          workspace = Path.cwd().resolve()
+          for source in project_root.iterdir():
+              if source.name == ".git":
+                  continue
+              target = workspace / source.name
+              if source.is_dir():
+                  import shutil
+                  shutil.copytree(source, target, dirs_exist_ok=True)
+              else:
+                  import shutil
+                  shutil.copy2(source, target)
+
+          print(f"Restored project files from {archive.name} using {project_root}")
+          PY
+
+          rm -f "$archive"
+
+      - name: Commit restored project
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Restore complete project from ZIP archive"
+          git push origin HEAD:main
